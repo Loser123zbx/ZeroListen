@@ -10,6 +10,7 @@
 - 语音合成走本地 kokoro-js (Node), 首次运行会从 hf-mirror 下载并缓存模型。
 """
 
+import datetime
 import json
 import os
 import re
@@ -19,7 +20,10 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import zipfile
+import urllib.request
+import urllib.error
 
 import wx
 import wx.adv
@@ -28,7 +32,6 @@ from openpyxl import Workbook, load_workbook
 
 from all_panels import main_panel, wordlib_grid, welcome_page, workbar_page, progress
 from html_player import render_player_html
-import translator
 
 def _app_dir():
     # 打包成可执行文件时, 资源(tts_cli.js/node_modules/模型)放在 exe 同级目录。
@@ -38,10 +41,23 @@ def _app_dir():
 
 
 APP_DIR = _app_dir()
+PROJECT_ROOT = os.path.dirname(APP_DIR)
+NODE_DIR = os.path.join(PROJECT_ROOT, "node")
+LOG_DIR = os.path.join(PROJECT_ROOT, "log")
 WORDLIB_DIR = os.path.join(APP_DIR, "wordlibs")
 EXPORT_DIR = os.path.join(APP_DIR, "exports")
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 TTS_CLI = os.path.join(APP_DIR, "tts_cli.js")
+
+os.makedirs(LOG_DIR, exist_ok=True)
+
+
+def _apply_button_style(button):
+    button.SetFont(wx.Font(9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD, False))
+    button.SetForegroundColour(wx.Colour(255, 255, 255))
+    button.SetBackgroundColour(wx.Colour(25, 25, 112))
+    return button
+
 
 DEFAULT_MODEL_ID = "onnx-community/Kokoro-82M-ONNX"
 DEFAULT_TEST_TEXT = "The universe said I love you because you are love."
@@ -87,7 +103,7 @@ VOICES = [
 ]
 
 class AudioConfig(object):
-    """音频导出配置(含 HTML 播放器跟读默认设置)。"""
+    """音频导出配置(含 HTML 播放器跟读默认设置、窗口视觉配置)。"""
 
     def __init__(self, d=None):
         d = d or {}
@@ -97,7 +113,21 @@ class AudioConfig(object):
         self.repeat_count = int(d.get("repeat_count", 2))
         self.interval_mode = d.get("interval_mode", "seconds")  # seconds | multiple
         self.interval_value = float(d.get("interval_value", 1.5))
+        self.bg_color = self._normalize_hex(d.get("bg_color", "#FFFFFF"), "#FFFFFF")
+        self.accent_color = self._normalize_hex(d.get("accent_color", "#191970"), "#191970")
+        self.window_alpha = int(d.get("window_alpha", 255))
         self._normalize()
+
+    @staticmethod
+    def _normalize_hex(value, default):
+        if not isinstance(value, str):
+            return default
+        value = value.strip()
+        if value.startswith("#"):
+            value = value[1:]
+        if len(value) != 6 or any(ch not in "0123456789abcdefABCDEF" for ch in value):
+            return default
+        return "#" + value.upper()
 
     def _normalize(self):
         if self.speed < 0.5:
@@ -114,6 +144,9 @@ class AudioConfig(object):
             self.interval_mode = "seconds"
         if self.interval_value < 0:
             self.interval_value = 0
+        self.bg_color = self._normalize_hex(self.bg_color, "#FFFFFF")
+        self.accent_color = self._normalize_hex(self.accent_color, "#191970")
+        self.window_alpha = max(20, min(255, int(self.window_alpha)))
 
     def to_dict(self):
         return {
@@ -123,6 +156,9 @@ class AudioConfig(object):
             "repeat_count": self.repeat_count,
             "interval_mode": self.interval_mode,
             "interval_value": self.interval_value,
+            "bg_color": self.bg_color,
+            "accent_color": self.accent_color,
+            "window_alpha": self.window_alpha,
         }
 
 
@@ -142,9 +178,271 @@ def save_config(cfg):
         pass
 
 
+def hex_to_rgb(color_hex):
+    color_hex = str(color_hex or "#FFFFFF").strip()
+    if color_hex.startswith("#"):
+        color_hex = color_hex[1:]
+    if len(color_hex) == 6:
+        try:
+            return tuple(int(color_hex[i:i+2], 16) for i in (0, 2, 4))
+        except ValueError:
+            pass
+    return (255, 255, 255)
+
+
+def apply_visual_theme(frame, config):
+    bg_color = wx.Colour(*hex_to_rgb(config.bg_color))
+    accent = wx.Colour(*hex_to_rgb(config.accent_color))
+    frame.SetBackgroundColour(bg_color)
+    frame.SetTransparent(int(config.window_alpha))
+    for child in getattr(frame, "GetChildren", lambda: [])():
+        try:
+            child.SetBackgroundColour(bg_color)
+        except Exception:
+            pass
+    if hasattr(frame, "workbar"):
+        frame.workbar.SetBackgroundColour(bg_color)
+    if hasattr(frame, "welcome"):
+        frame.welcome.SetBackgroundColour(bg_color)
+    if hasattr(frame, "editor"):
+        frame.editor.SetBackgroundColour(bg_color)
+    if hasattr(frame, "exporter"):
+        frame.exporter.SetBackgroundColour(bg_color)
+    return accent
+
+
+def write_error_log(message, exc=None):
+    os.makedirs(LOG_DIR, exist_ok=True)
+    now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_path = os.path.join(LOG_DIR, f"error_{now}.log")
+    details = str(message or "")
+    if exc is not None:
+        details += "\n\n" + traceback.format_exc() if exc is True else "\n\n" + str(exc)
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(details)
+    return log_path
+
+
+def show_error_dialog(title, message, exc=None):
+    details = str(message or "")
+    if exc is not None:
+        if exc is True:
+            details += "\n\n" + traceback.format_exc()
+        else:
+            details += "\n\n" + str(exc)
+    log_path = write_error_log(details)
+    details += "\n\n日志已保存：\n" + log_path
+
+    dlg = wx.Dialog(None, title=title, size=(700, 420))
+
+    main_sizer = wx.BoxSizer(wx.VERTICAL)
+    text = wx.TextCtrl(dlg, value=details, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2)
+    text.SetInsertionPoint(0)
+    main_sizer.Add(text, 1, wx.EXPAND | wx.ALL, 10)
+
+    btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+    copy_btn = wx.Button(dlg, label="复制错误")
+    open_btn = wx.Button(dlg, label="打开日志目录")
+    close_btn = wx.Button(dlg, label="关闭")
+
+    def on_copy(evt):
+        try:
+            if wx.TheClipboard.Open():
+                wx.TheClipboard.SetData(wx.TextDataObject(details))
+                wx.TheClipboard.Close()
+                wx.MessageBox("错误信息已复制到剪贴板。", "已复制", wx.OK | wx.ICON_INFORMATION)
+            else:
+                wx.MessageBox("剪贴板不可用，请手动复制下方内容。", "提示", wx.OK | wx.ICON_WARNING)
+        except Exception:
+            wx.MessageBox("复制失败，请手动复制下方内容。", "提示", wx.OK | wx.ICON_WARNING)
+
+    def on_open_log(evt):
+        try:
+            os.startfile(LOG_DIR)
+        except Exception:
+            wx.MessageBox("日志目录：\n" + LOG_DIR, "日志位置", wx.OK | wx.ICON_INFORMATION)
+
+    copy_btn.Bind(wx.EVT_BUTTON, on_copy)
+    open_btn.Bind(wx.EVT_BUTTON, on_open_log)
+    close_btn.Bind(wx.EVT_BUTTON, lambda evt: dlg.EndModal(wx.ID_OK))
+
+    btn_sizer.Add(copy_btn, 0, wx.RIGHT | wx.ALIGN_CENTER_VERTICAL, 8)
+    btn_sizer.Add(open_btn, 0, wx.RIGHT | wx.ALIGN_CENTER_VERTICAL, 8)
+    btn_sizer.Add(close_btn, 0, wx.ALIGN_CENTER_VERTICAL)
+    main_sizer.Add(btn_sizer, 0, wx.ALIGN_RIGHT | wx.ALL, 10)
+
+    dlg.SetSizerAndFit(main_sizer)
+    dlg.ShowModal()
+    dlg.Destroy()
+    return log_path
+
+
+def install_global_exception_handler():
+    def _handler(exc_type, exc_value, exc_tb):
+        message = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        show_error_dialog("程序异常", str(exc_value) or exc_type.__name__, message)
+    sys.excepthook = _handler
+
+
 # ---------------------------------------------------------------------------
 # 词句库文件层
 # ---------------------------------------------------------------------------
+
+def _find_node_executable(start_dir):
+    if not start_dir or not os.path.isdir(start_dir):
+        return None
+    for root, _dirs, files in os.walk(start_dir):
+        for name in files:
+            low = name.lower()
+            if low in ("node.exe", "node"):
+                return os.path.join(root, name)
+    return None
+
+
+def _download_node_to_local_dir(prog_cb=None):
+    os.makedirs(NODE_DIR, exist_ok=True)
+    if os.name != "nt":
+        return None
+    existing = _find_node_executable(NODE_DIR)
+    if existing:
+        return existing
+    try:
+        if prog_cb is not None:
+            prog_cb(0, 100, "正在获取 Node.js 下载信息…")
+        with urllib.request.urlopen("https://nodejs.org/dist/index.json", timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        release = next((item for item in data if item.get("lts") not in (None, False)), data[0] if data else None)
+        if not release:
+            return None
+        version = release.get("version")
+        if not version:
+            return None
+        zip_url = f"https://nodejs.org/dist/{version}/node-{version}-win-x64.zip"
+        zip_path = os.path.join(NODE_DIR, "node-win-x64.zip")
+        if prog_cb is not None:
+            prog_cb(5, 100, f"正在下载 Node.js {version}…")
+        with urllib.request.urlopen(zip_url, timeout=60) as resp, open(zip_path, "wb") as f:
+            total = int(resp.headers.get("Content-Length", "0") or "0")
+            received = 0
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                received += len(chunk)
+                if total > 0 and prog_cb is not None:
+                    prog_cb(min(95, int(received * 100 / total)), 100, f"正在下载 Node.js {version}… {int(received * 100 / total)}%")
+        if prog_cb is not None:
+            prog_cb(96, 100, "正在解压 Node.js…")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(NODE_DIR)
+        os.remove(zip_path)
+        if prog_cb is not None:
+            prog_cb(100, 100, "Node.js 下载完成")
+        return _find_node_executable(NODE_DIR)
+    except Exception:
+        return None
+
+
+def _resolve_node_executable(prog_cb=None):
+    candidates = [
+        os.path.join(NODE_DIR, "node.exe"),
+        os.path.join(NODE_DIR, "node"),
+        os.path.join(APP_DIR, "node.exe"),
+        os.path.join(APP_DIR, "node"),
+        os.path.join(PROJECT_ROOT, "node.exe"),
+        os.path.join(PROJECT_ROOT, "node"),
+    ]
+    for item in candidates:
+        if os.path.isfile(item):
+            return item
+    found = _find_node_executable(NODE_DIR)
+    if found:
+        return found
+    found = shutil.which("node") or shutil.which("node.exe")
+    if found:
+        return found
+    found = _download_node_to_local_dir(prog_cb)
+    return found
+
+
+def _resolve_npm_command(node_exe):
+    if not node_exe:
+        return None
+    base_dir = os.path.dirname(node_exe)
+    for candidate in [
+        os.path.join(base_dir, "npm.cmd"),
+        os.path.join(base_dir, "npm"),
+        os.path.join(base_dir, "npx.cmd"),
+        os.path.join(base_dir, "npx"),
+    ]:
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def _node_env_with_local_path(node_exe):
+    env = os.environ.copy()
+    if not node_exe:
+        return env
+    node_dir = os.path.dirname(node_exe)
+    path_value = env.get("PATH", "")
+    env["PATH"] = node_dir + os.pathsep + path_value if path_value else node_dir
+    return env
+
+
+def _ensure_node_dependencies(node_exe, prog_cb=None):
+    package_json = os.path.join(APP_DIR, "package.json")
+    if not os.path.exists(package_json):
+        return
+    node_modules = os.path.join(APP_DIR, "node_modules")
+    kokoro_js = os.path.join(node_modules, "kokoro-js")
+    transformers = os.path.join(node_modules, "@huggingface", "transformers")
+    package_ok = os.path.isdir(kokoro_js) and os.path.exists(os.path.join(kokoro_js, "package.json"))
+    package_ok = package_ok and os.path.isdir(transformers) and os.path.exists(os.path.join(transformers, "package.json"))
+    if package_ok:
+        return
+
+    npm_cmd = _resolve_npm_command(node_exe)
+    if not npm_cmd:
+        return
+
+    if os.path.isdir(node_modules):
+        shutil.rmtree(node_modules, ignore_errors=True)
+
+    for attempt in range(2):
+        if prog_cb is not None:
+            prog_cb(0, 100, "正在检查并安装项目依赖…")
+        cmd = [npm_cmd, "install", "--prefix", APP_DIR, "--no-fund", "--no-audit"]
+        proc = subprocess.Popen(cmd, cwd=APP_DIR, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                encoding="utf-8", errors="replace",
+                                env=_node_env_with_local_path(node_exe))
+        tail = []
+        try:
+            for line in proc.stdout:
+                line = line.rstrip("\n")
+                if line:
+                    tail.append(line)
+                    if len(tail) > 30:
+                        tail.pop(0)
+                    if prog_cb is not None:
+                        prog_cb(10, 100, line.strip()[:80] or "正在安装项目依赖…")
+            rc = proc.wait()
+        finally:
+            if proc.stdout:
+                proc.stdout.close()
+
+        if prog_cb is not None:
+            prog_cb(100, 100, "依赖安装完成" if rc == 0 else "依赖安装失败")
+        if rc == 0:
+            break
+        if os.path.isdir(node_modules):
+            shutil.rmtree(node_modules, ignore_errors=True)
+        if attempt == 0:
+            continue
+        raise RuntimeError("自动安装项目依赖失败：\n" + ("\n".join(tail[-10:]) or ""))
+
 
 def ensure_dirs():
     os.makedirs(WORDLIB_DIR, exist_ok=True)
@@ -268,6 +566,46 @@ def play_wav(path):
 # 音频导出配置对话框(后补界面)
 # ---------------------------------------------------------------------------
 
+class VisualSettingsDialog(wx.Dialog):
+    def __init__(self, parent, config):
+        super().__init__(parent, title="视觉设置", size=(460, 320),
+                         style=wx.DEFAULT_DIALOG_STYLE)
+        self._config = config
+        panel = wx.Panel(self)
+        root = wx.BoxSizer(wx.VERTICAL)
+
+        visual_box = wx.StaticBox(panel, label="视觉样式")
+        visual = wx.StaticBoxSizer(visual_box, wx.VERTICAL)
+        grid = wx.FlexGridSizer(3, 2, 10, 10)
+        grid.AddGrowableCol(1, 1)
+
+        grid.Add(wx.StaticText(visual_box, label="窗口背景"), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+        self.bg_color = wx.ColourPickerCtrl(visual_box, colour=wx.Colour(*hex_to_rgb(config.bg_color)))
+        grid.Add(self.bg_color, 0, wx.EXPAND | wx.ALL, 4)
+
+        grid.Add(wx.StaticText(visual_box, label="主强调色"), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+        self.accent_color = wx.ColourPickerCtrl(visual_box, colour=wx.Colour(*hex_to_rgb(config.accent_color)))
+        grid.Add(self.accent_color, 0, wx.EXPAND | wx.ALL, 4)
+
+        grid.Add(wx.StaticText(visual_box, label="透明度"), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+        self.opacity_slider = wx.Slider(visual_box, value=int((config.window_alpha / 255.0) * 100), minValue=60, maxValue=100)
+        grid.Add(self.opacity_slider, 0, wx.EXPAND | wx.ALL, 4)
+
+        visual.Add(grid, 0, wx.EXPAND | wx.ALL, 10)
+        root.Add(visual, 0, wx.EXPAND | wx.ALL, 8)
+
+        btns = wx.BoxSizer(wx.HORIZONTAL)
+        ok_btn = _apply_button_style(wx.Button(panel, wx.ID_OK, "保存", style=wx.BORDER_NONE))
+        cancel_btn = _apply_button_style(wx.Button(panel, wx.ID_CANCEL, "取消", style=wx.BORDER_NONE))
+        btns.AddStretchSpacer(1)
+        btns.Add(ok_btn, 0, wx.ALL, 5)
+        btns.Add(cancel_btn, 0, wx.ALL, 5)
+        root.Add(btns, 0, wx.EXPAND | wx.ALL, 8)
+
+        panel.SetSizer(root)
+        self.SetClientSize(panel.GetBestSize())
+
+
 class AudioConfigDialog(wx.Dialog):
     def __init__(self, parent, config):
         super().__init__(parent, title="音频导出配置", size=(560, 700),
@@ -351,18 +689,18 @@ class AudioConfigDialog(wx.Dialog):
         test.Add(self.test_text, 1, wx.EXPAND | wx.ALL, 5)
         test_row = wx.BoxSizer(wx.HORIZONTAL)
         test_row.AddStretchSpacer(1)
-        self.test_btn = wx.Button(test_box, label="生成并播放测试音频")
+        self.test_btn = _apply_button_style(wx.Button(test_box, label="生成并播放测试音频", style=wx.BORDER_NONE))
         test_row.Add(self.test_btn, 0, wx.ALL, 5)
         test.Add(test_row, 0, wx.EXPAND | wx.ALL, 5)
         root.Add(test, 0, wx.EXPAND | wx.ALL, 8)
 
         # ---- 按钮 ----
         btns = wx.BoxSizer(wx.HORIZONTAL)
-        ok_btn = wx.Button(panel, wx.ID_OK, "确定")
-        cancel_btn = wx.Button(panel, wx.ID_CANCEL, "取消")
+        ok_btn = _apply_button_style(wx.Button(panel, wx.ID_OK, "确定", style=wx.BORDER_NONE))
+        cancel_btn = _apply_button_style(wx.Button(panel, wx.ID_CANCEL, "取消", style=wx.BORDER_NONE))
         btns.AddStretchSpacer(1)
-        btns.Add(ok_btn, 0, wx.ALL, 5)
-        btns.Add(cancel_btn, 0, wx.ALL, 5)
+        btns.Add(ok_btn, 0, wx.ALL, 8)
+        btns.Add(cancel_btn, 0, wx.ALL, 8)
         root.Add(btns, 0, wx.EXPAND | wx.ALL, 8)
 
         panel.SetSizer(root)
@@ -430,11 +768,10 @@ class EditorPage(wx.Panel):
         root.Add(self.view, 1, wx.EXPAND | wx.ALL, 5)
 
         tools = wx.BoxSizer(wx.HORIZONTAL)
-        self.btn_excel = wx.Button(self, label="保存为Excel词库")
-        self.btn_template = wx.Button(self, label="生成Excel词库模板")
-        self.btn_translate = wx.Button(self, label="机翻空白释义")
-        for b in (self.btn_excel, self.btn_template, self.btn_translate):
-            tools.Add(b, 0, wx.ALL, 5)
+        self.btn_excel = _apply_button_style(wx.Button(self, label="保存为Excel词库", style=wx.BORDER_NONE))
+        self.btn_template = _apply_button_style(wx.Button(self, label="生成Excel词库模板", style=wx.BORDER_NONE))
+        for b in (self.btn_excel, self.btn_template):
+            tools.Add(b, 0, wx.ALL, 8)
         root.Add(tools, 0, wx.EXPAND, 5)
         self.SetSizer(root)
 
@@ -454,6 +791,7 @@ class MainFrame(main_panel):
 
         self._build_pages()
         self._bind()
+        apply_visual_theme(self, self.config)
         self.refresh_wordlib_list()
 
     # ---- 页面搭建 ----
@@ -473,10 +811,11 @@ class MainFrame(main_panel):
         self.m_listBox1.Bind(wx.EVT_LISTBOX, self.on_select_lib)
 
         self.welcome.about.Bind(wx.EVT_BUTTON, self.on_about)
+        self.welcome.visual_settings.Bind(wx.EVT_BUTTON, self.on_visual_settings)
 
         self.editor.btn_excel.Bind(wx.EVT_BUTTON, self.on_save_excel)
         self.editor.btn_template.Bind(wx.EVT_BUTTON, self.on_template)
-        self.editor.btn_translate.Bind(wx.EVT_BUTTON, self.on_translate)
+
 
         self.exporter.checkall.Bind(wx.EVT_BUTTON, self.on_checkall)
         self.exporter.output_wav.Bind(wx.EVT_BUTTON, self.on_export_audio)
@@ -574,7 +913,7 @@ class MainFrame(main_panel):
         self.refresh_wordlib_list()
         self.load_lib(name)
 
-    # ---- 保存 / 模板 / 机翻 ----
+    # ---- 保存 / 模板 ----
     def _require_lib(self):
         if not self.current_lib:
             wx.MessageBox("请先选择或创建一个词句库。", "提示", wx.OK | wx.ICON_INFORMATION)
@@ -608,22 +947,6 @@ class MainFrame(main_panel):
             pass
         wx.MessageBox("已生成模板：\n" + p, "完成", wx.OK | wx.ICON_INFORMATION)
 
-    def on_translate(self, evt):
-        if not translator.is_ready():
-            wx.MessageBox(translator.status_message(), "无法机翻", wx.OK | wx.ICON_WARNING)
-            return
-        grid = self.editor.view.grid_wordlib
-        cnt = 0
-        for i in range(grid.GetNumberRows()):
-            word = grid.GetCellValue(i, 0).strip()
-            if word and not grid.GetCellValue(i, 1).strip():
-                t = translator.translate(word)
-                if t:
-                    grid.SetCellValue(i, 1, t)
-                    cnt += 1
-        wx.MessageBox("已为 %d 条空白释义填入 Argos Translate 翻译结果。" % cnt,
-                      "完成", wx.OK | wx.ICON_INFORMATION)
-
     # ---- 导出页 ----
     def refresh_checklist(self):
         cb = self.exporter.check_words
@@ -655,6 +978,17 @@ class MainFrame(main_panel):
     def on_audio_config(self, evt):
         dlg = AudioConfigDialog(self, self.config)
         dlg.ShowModal()
+        dlg.Destroy()
+
+    def on_visual_settings(self, evt):
+        dlg = VisualSettingsDialog(self, self.config)
+        if dlg.ShowModal() == wx.ID_OK:
+            self.config.bg_color = dlg.bg_color.GetColour().GetAsString(wx.C2S_HTML_SYNTAX)
+            self.config.accent_color = dlg.accent_color.GetColour().GetAsString(wx.C2S_HTML_SYNTAX)
+            self.config.window_alpha = int(round((dlg.opacity_slider.GetValue() / 100.0) * 255))
+            self.config._normalize()
+            save_config(self.config)
+            apply_visual_theme(self, self.config)
         dlg.Destroy()
 
     def on_export_audio(self, evt):
@@ -757,14 +1091,17 @@ class MainFrame(main_panel):
         start = time.time()
         result = {"ok": False, "error": ""}
 
-        def prog(i, n):
+        def prog(i, n, label=None):
             pct = int(round(i * 100.0 / n)) if n else 0
             elapsed = time.time() - start
             eta = (elapsed / i * (n - i)) if i > 0 else 0.0
-            msg = "正在进行第%d项，预计还需 %.0f 秒\n已完成 %d%% (%d/%d)" % (i, eta, pct, i, n)
+            if label:
+                msg = label
+            else:
+                msg = "正在进行第%d项，预计还需 %.0f 秒\n已完成 %d%% (%d/%d)" % (i, eta, pct, i, n)
 
             def update():
-                dlg.m_gauge1.SetValue(pct)
+                dlg.m_gauge1.SetValue(min(100, max(0, pct)))
                 dlg.info.SetLabel(msg)
             wx.CallAfter(update)
 
@@ -787,16 +1124,15 @@ class MainFrame(main_panel):
             pass
 
         if not result["ok"]:
-            wx.MessageBox("生成失败：\n" + result["error"], "错误", wx.OK | wx.ICON_ERROR)
+            show_error_dialog("生成失败", result["error"])
             return False
         return True
 
     def _run_node(self, manifest_path, prog_cb):
-        # 打包后优先使用 exe 同级目录下的 node.exe, 否则用 PATH 里的 node。
-        local_node = os.path.join(APP_DIR, "node.exe")
-        node = local_node if os.path.exists(local_node) else shutil.which("node")
+        node = _resolve_node_executable(prog_cb)
         if not node:
-            raise RuntimeError("未找到 Node.js，请先安装 Node.js，或在程序目录放置 node.exe。")
+            raise RuntimeError("未找到 Node.js，且自动下载失败。请确认网络正常，或手动放置 node.exe 到项目根目录的 node 文件夹。")
+        _ensure_node_dependencies(node, prog_cb)
         cmd = [node, TTS_CLI, manifest_path]
         proc = subprocess.Popen(cmd, cwd=APP_DIR, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True,
@@ -825,6 +1161,7 @@ class MainFrame(main_panel):
 
 
 def main():
+    install_global_exception_handler()
     app = wx.App(False)
     frame = MainFrame()
     frame.Show()

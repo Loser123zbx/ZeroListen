@@ -15,6 +15,13 @@ import wx.grid
 import gettext
 _ = gettext.gettext
 
+
+def _apply_button_style(button):
+	button.SetFont(wx.Font( 9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD, False ))
+	button.SetForegroundColour(wx.Colour( 255, 255, 255 ))
+	button.SetBackgroundColour(wx.Colour( 25, 25, 112 ))
+	return button
+
 #--------------------------------------------------------------------------
 #  Class main_panel
 #---------------------------------------------------------------------------
@@ -25,7 +32,7 @@ class main_panel ( wx.Frame ):
 		wx.Frame.__init__ (self, parent, id = wx.ID_ANY, title = wx.EmptyString, pos = wx.DefaultPosition, size = wx.Size( 800,460 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL)
 
 		self.SetSizeHints(wx.DefaultSize, wx.DefaultSize)
-		self.SetBackgroundColour(wx.Colour( 239, 235, 235 ))
+		self.SetBackgroundColour(wx.Colour( 255, 255, 255 ))
 
 		root = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -44,11 +51,11 @@ class main_panel ( wx.Frame ):
 
 		add_wordlib = wx.BoxSizer(wx.HORIZONTAL)
 
-		self.create_wordlib = wx.Button(self, wx.ID_ANY, _(u"创建新词句库"), wx.DefaultPosition, wx.DefaultSize, 0)
-		add_wordlib.Add(self.create_wordlib, 1, wx.EXPAND, 5)
+		self.create_wordlib = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"创建新词句库"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		add_wordlib.Add(self.create_wordlib, 1, wx.EXPAND, 8)
 
-		self.import_wordlib = wx.Button(self, wx.ID_ANY, _(u"导入新词句库"), wx.DefaultPosition, wx.DefaultSize, 0)
-		add_wordlib.Add(self.import_wordlib, 1, wx.EXPAND, 5)
+		self.import_wordlib = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"导入新词句库"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		add_wordlib.Add(self.import_wordlib, 1, wx.EXPAND, 8)
 
 
 		word_lib.Add(add_wordlib, 0, 0, 5)
@@ -135,7 +142,7 @@ class wordlib_editor ( wx.Frame ):
 		wx.Frame.__init__ (self, parent, id = wx.ID_ANY, title = wx.EmptyString, pos = wx.DefaultPosition, size = wx.Size( 800,460 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL)
 
 		self.SetSizeHints(wx.DefaultSize, wx.DefaultSize)
-		self.SetBackgroundColour(wx.Colour( 239, 235, 235 ))
+		self.SetBackgroundColour(wx.Colour( 255, 255, 255 ))
 
 		root = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -145,19 +152,19 @@ class wordlib_editor ( wx.Frame ):
 
 		tools = wx.BoxSizer(wx.VERTICAL)
 
-		self.save_json = wx.Button(self, wx.ID_ANY, _(u"保存为JSON词库"), wx.DefaultPosition, wx.DefaultSize, 0)
-		tools.Add(self.save_json, 0, wx.ALL, 5)
+		self.save_json = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"保存为JSON词库"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		tools.Add(self.save_json, 0, wx.ALL, 8)
 
-		self.save_excel = wx.Button(self, wx.ID_ANY, _(u"保存为Excel词库"), wx.DefaultPosition, wx.DefaultSize, 0)
-		tools.Add(self.save_excel, 0, wx.ALL, 5)
+		self.save_excel = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"保存为Excel词库"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		tools.Add(self.save_excel, 0, wx.ALL, 8)
 
 		self.tip = wx.StaticText(self, wx.ID_ANY, _(u"提示:两种词库都可以\n进行本软件支持的所有操作，按需求选择。\nJSON词库：\n可以在左侧编辑框编辑，\n占用空间小\nExcel词库：\n可以在左侧编辑框\n或者其他Excel编辑器\n（如微软Excel，WPS等）编辑，\n占用空间较小"), wx.DefaultPosition, wx.DefaultSize, 0)
 		self.tip.Wrap(-1)
 
 		tools.Add(self.tip, 0, wx.ALL, 5)
 
-		self.create_empty_excel_wordlib = wx.Button(self, wx.ID_ANY, _(u"生成Excel词库模板"), wx.DefaultPosition, wx.DefaultSize, 0)
-		tools.Add(self.create_empty_excel_wordlib, 0, wx.ALL, 5)
+		self.create_empty_excel_wordlib = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"生成Excel词库模板"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		tools.Add(self.create_empty_excel_wordlib, 0, wx.ALL, 8)
 
 		self.tip2 = wx.StaticText(self, wx.ID_ANY, _(u"如果想完全在Excel中编辑词库\n请点击“生成Excel词库模板”\n在自动打开的文件管理器中\n找到需要编辑的Excel文件\n打开你的Excel编辑器即可编辑"), wx.DefaultPosition, wx.DefaultSize, 0)
 		self.tip2.Wrap(-1)
@@ -186,6 +193,7 @@ class welcome_page ( wx.Panel ):
 	def __init__(self, parent, id = wx.ID_ANY, pos = wx.DefaultPosition, size = wx.Size( 800,460 ), style = wx.TAB_TRAVERSAL, name = wx.EmptyString):
 		wx.Panel.__init__ (self, parent, id = id, pos = pos, size = size, style = style, name = name)
 
+		self.SetBackgroundColour(wx.Colour(255, 255, 255))
 		root = wx.BoxSizer(wx.VERTICAL)
 
 		self.welcome_text = wx.StaticText(self, wx.ID_ANY, _(u"欢迎使用零听(ZeroListen)"), wx.DefaultPosition, wx.DefaultSize, 0)
@@ -195,8 +203,11 @@ class welcome_page ( wx.Panel ):
 
 		root.Add(self.welcome_text, 0, wx.ALL|wx.ALIGN_CENTER_HORIZONTAL, 5)
 
-		self.about = wx.Button(self, wx.ID_ANY, _(u"关于"), wx.DefaultPosition, wx.DefaultSize, 0)
-		root.Add(self.about, 0, wx.ALL|wx.ALIGN_CENTER_HORIZONTAL, 5)
+		self.about = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"关于"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		root.Add(self.about, 0, wx.ALL|wx.ALIGN_CENTER_HORIZONTAL, 8)
+
+		self.visual_settings = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"视觉设置"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		root.Add(self.visual_settings, 0, wx.ALL|wx.ALIGN_CENTER_HORIZONTAL, 8)
 
 
 		self.SetSizer( root )
@@ -215,6 +226,7 @@ class workbar_page ( wx.Panel ):
 	def __init__(self, parent, id = wx.ID_ANY, pos = wx.DefaultPosition, size = wx.Size( 800,460 ), style = wx.TAB_TRAVERSAL, name = wx.EmptyString):
 		wx.Panel.__init__ (self, parent, id = id, pos = pos, size = size, style = style, name = name)
 
+		self.SetBackgroundColour(wx.Colour(255, 255, 255))
 		root = wx.BoxSizer(wx.HORIZONTAL)
 
 		wordbar = wx.BoxSizer(wx.VERTICAL)
@@ -230,27 +242,27 @@ class workbar_page ( wx.Panel ):
 		self.check_words = wx.CheckListBox(self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, check_wordsChoices, wx.LB_EXTENDED|wx.LB_NEEDED_SB)
 		wordbar.Add(self.check_words, 1, wx.ALL|wx.EXPAND, 5)
 
-		self.checkall = wx.Button(self, wx.ID_ANY, _(u"全选/取消全选"), wx.DefaultPosition, wx.DefaultSize, 0)
-		wordbar.Add(self.checkall, 0, wx.ALL, 5)
+		self.checkall = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"全选/取消全选"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		wordbar.Add(self.checkall, 0, wx.ALL, 8)
 
 
 		root.Add(wordbar, 1, wx.EXPAND, 5)
 
 		sidebar = wx.BoxSizer(wx.VERTICAL)
 
-		self.output_wav = wx.Button(self, wx.ID_ANY, _(u"导出音频"), wx.DefaultPosition, wx.DefaultSize, 0)
-		sidebar.Add(self.output_wav, 0, wx.ALL, 5)
+		self.output_wav = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"导出音频"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		sidebar.Add(self.output_wav, 0, wx.ALL, 8)
 
-		self.output_html = wx.Button(self, wx.ID_ANY, _(u"导出html"), wx.DefaultPosition, wx.DefaultSize, 0)
-		sidebar.Add(self.output_html, 0, wx.ALL, 5)
+		self.output_html = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"导出html"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		sidebar.Add(self.output_html, 0, wx.ALL, 8)
 
 		self.tip_output = wx.StaticText(self, wx.ID_ANY, _(u"提示：\n导出音频是\n导出所有词句独立\n的音频文件。\n导出html则是\n以网页的形式导出。\n能够导出一整个\n完整的播放器，\n可以在任何\n现代浏览器运行"), wx.DefaultPosition, wx.DefaultSize, 0)
 		self.tip_output.Wrap(-1)
 
 		sidebar.Add(self.tip_output, 0, wx.ALL, 5)
 
-		self.output_audio_config = wx.Button(self, wx.ID_ANY, _(u"音频导出配置"), wx.DefaultPosition, wx.DefaultSize, 0)
-		sidebar.Add(self.output_audio_config, 0, wx.ALL, 5)
+		self.output_audio_config = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"音频导出配置"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
+		sidebar.Add(self.output_audio_config, 0, wx.ALL, 8)
 
 
 		root.Add(sidebar, 0, wx.EXPAND, 5)

@@ -4,5 +4,8 @@
   "dtype": "fp32",
   "repeat_count": 3,
   "interval_mode": "multiple",
-  "interval_value": 4.5
+  "interval_value": 4.5,
+  "bg_color": "#FFFFFF",
+  "accent_color": "#191970",
+  "window_alpha": 255
 }

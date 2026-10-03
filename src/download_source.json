@@ -1,0 +1,38 @@
+{
+        "python":{
+                "description":"Python 3.11.4,必要的运行环境",
+                "amd64":{
+                        "size":"24.2 MB",
+                        "mirror":"https://mirrors.aliyun.com/python-release/windows/python-3.11.4-embed-amd64.zip",
+                        "host":"https://www.python.org/ftp/python/3.11.4/python-3.11.4-embed-amd64.zip"
+                },
+                "arm64":{
+                        "size":"23.6 MB",
+                        "mirror":"https://mirrors.aliyun.com/python-release/windows/python-3.11.4-embed-arm64.zip",
+                        "host":"https://www.python.org/ftp/python/3.11.4/python-3.11.4-embed-arm64.zip"
+                }
+        },
+        "node":{
+                "description":"Node.js 24.21.0,必要的运行环境",
+                "win64":{
+                        "size":"22.6 MB",
+                        "mirror":"https://mirrors.aliyun.com/nodejs-release/windows/node-v24.21.0-win-x64.7z",
+                        "host":"https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.7z"
+                },
+
+                "arm64":{
+                        "size":"20.9 MB",
+                        "mirror":"https://mirrors.aliyun.com/nodejs-release/windows/node-v24.21.0-win-arm64.7z",
+                        "host":"https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-arm64.7z"
+                }
+        },
+        "kokoro":{
+                "description":"kokoro 文字转语音(TTS)大模型",
+                "model":{
+                        "size":"326 MB",
+                        "mirror":"https://hf-mirror.com/onnx-community/Kokoro-82M-ONNX/blob/main/onnx/model.onnx",
+                        "host":"https://huggingface.co/onnx-community/Kokoro-82M-ONNX/blob/main/onnx/model.onnx"
+                }
+
+        }
+}

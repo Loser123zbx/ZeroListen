@@ -1,0 +1,8 @@
+/node
+/log
+/.venv
+/src/__pycache__
+/src/exports
+/src/wordlib
+/src/node_modules
+/src/node
