@@ -13,6 +13,37 @@ import wx.xrc
 import gettext
 _ = gettext.gettext
 
+REPO_SOURSE = {
+	"mirror":"https://gitee.com/loser123zbx/ZeroListen/repository/archive/master.zip",
+	"host":"https://github.com/Loser123zbx/ZeroListen/archive/refs/heads/master.zip"
+}
+"""
+repo structure:
+
+ZeroListen/
+├── .gitignore
+├── LICENSE
+├── README.md
+├── 用户手册.md
+├── src/
+│   ├── all_panels.py
+│   ├── build.bat
+│   ├── config.json
+│   ├── download_source.json
+│   ├── html_player.py
+│   ├── installer.py
+│   ├── main.py
+│   ├── package.json
+│   ├── tts_cli.js
+│   ├── tts.js
+│   ├── tts.py
+│   ├── zerolisten.spec
+│   └── wxProjects/
+│       ├── panels.fbp
+│       └── ZeroListenInstaller.fbp
+
+"""
+
 #--------------------------------------------------------------------------
 #  Class MyPanel1
 #---------------------------------------------------------------------------
