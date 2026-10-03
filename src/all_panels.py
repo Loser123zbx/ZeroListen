@@ -43,35 +43,32 @@ class main_panel ( wx.Frame ):
 
 		self.tip_set_wordlib.SetFont(wx.Font( 18, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, wx.EmptyString ))
 
-		word_lib.Add(self.tip_set_wordlib, 0, wx.ALL, 5)
+		word_lib.Add(self.tip_set_wordlib, 0, wx.ALL | wx.EXPAND, 5)
 
 		m_listBox1Choices = []
 		self.m_listBox1 = wx.ListBox(self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, m_listBox1Choices, 0)
-		word_lib.Add(self.m_listBox1, 1, wx.EXPAND, 5)
+		word_lib.Add(self.m_listBox1, 1, wx.EXPAND | wx.ALL, 5)
 
 		add_wordlib = wx.BoxSizer(wx.HORIZONTAL)
 
 		self.create_wordlib = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"创建新词句库"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
-		add_wordlib.Add(self.create_wordlib, 1, wx.EXPAND, 8)
+		add_wordlib.Add(self.create_wordlib, 1, wx.EXPAND | wx.ALL, 4)
 
 		self.import_wordlib = _apply_button_style(wx.Button(self, wx.ID_ANY, _(u"导入新词句库"), wx.DefaultPosition, wx.DefaultSize, wx.BORDER_NONE))
-		add_wordlib.Add(self.import_wordlib, 1, wx.EXPAND, 8)
+		add_wordlib.Add(self.import_wordlib, 1, wx.EXPAND | wx.ALL, 4)
 
+		word_lib.Add(add_wordlib, 0, wx.EXPAND | wx.ALL, 5)
 
-		word_lib.Add(add_wordlib, 0, 0, 5)
+		root.Add(word_lib, 0, wx.EXPAND | wx.ALL, 5)
 
+		self.workbar = wx.Notebook(self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.NB_TOP)
+		root.Add(self.workbar, 1, wx.EXPAND | wx.ALL, 5)
 
-		root.Add(word_lib, 0, wx.EXPAND, 5)
-
-		self.workbar = wx.Notebook( self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.NB_TOP )
-
-		root.Add(self.workbar, 1, wx.EXPAND, 5)
-
-
-		self.SetSizer( root )
+		self.SetSizer(root)
 		self.Layout()
-
 		self.Centre(wx.BOTH)
+
+		self.SetSize(wx.Size(800, 460))
 
 	def __del__( self ):
 		pass

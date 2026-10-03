@@ -153,3 +153,13 @@ class install_time ( wx.Panel ):
 	def __del__( self ):
 		pass
 
+def main():
+	app = wx.App(False)
+	frame = wx.Frame(None, title="ZeroListen 安装", size=(800, 460))
+	panel = MyPanel1(frame)
+	frame.Show()
+	app.MainLoop()
+
+
+if __name__ == "__main__":
+    main()

@@ -805,6 +805,7 @@ class MainFrame(main_panel):
         self.exporter = workbar_page(self.workbar)
         self.workbar.AddPage(self.exporter, "导出")
 
+
     def _bind(self):
         self.create_wordlib.Bind(wx.EVT_BUTTON, self.on_create_wordlib)
         self.import_wordlib.Bind(wx.EVT_BUTTON, self.on_import_wordlib)
