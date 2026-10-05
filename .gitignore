@@ -1,8 +1,23 @@
-/node
+# Python runtime / packaging
+.venv/
+.venv.zip
+.vscode/
+__pycache__/
+*.pyc
+
+# Project runtime output
+/release
 /log
-/.venv
-/src/__pycache__
-/src/exports
-/src/wordlib
+
+# Local package/build artifacts
 /src/node_modules
+/src/vendor
 /src/node
+/src/exports
+/src/wordlibs
+/src/__pycache__
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+

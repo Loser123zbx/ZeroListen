@@ -11,6 +11,7 @@ RELEASE_DIR = ROOT / "release"
 PKG_DIR = RELEASE_DIR / "ZeroListen_Installer"
 EXE_NAME = "installer.exe"
 ZIP_NAME = "src.zip"
+VENV_ZIP_NAME = ".venv.zip"
 ICON_PATH = SRC_DIR / "logo.ico"
 
 
@@ -27,6 +28,7 @@ def resolve_python_cmd():
         return ["python"]
     raise RuntimeError("未找到可用的 Python 解释器")
 
+
 EXCLUDED_DIRS = {
     ".venv",
     "__pycache__",
@@ -34,34 +36,37 @@ EXCLUDED_DIRS = {
     "dist",
     "release",
     "node",
+    "vendor",
     "exports",
     "wordlibs",
     "wxProjects",
 }
 
 
-def bundle_local_dependencies():
-    print("[2/5] 打包本地 pip / npm 依赖到 src.zip...")
-    py_cmd = resolve_python_cmd()
+def bundle_python_venv():
+    print("[2/5] 打包当前 Python 虚拟环境到 .venv.zip...")
+    venv_dir = ROOT / ".venv"
+    if not venv_dir.exists():
+        raise FileNotFoundError(f"未找到当前 Python 虚拟环境: {venv_dir}")
 
-    vendor_dir = SRC_DIR / "vendor"
-    wheel_dir = vendor_dir / "python_wheels"
-    wheel_dir.mkdir(parents=True, exist_ok=True)
+    target_zip = PKG_DIR / VENV_ZIP_NAME
+    if target_zip.exists():
+        target_zip.unlink()
 
-    pip_download = py_cmd + [
-        "-m",
-        "pip",
-        "download",
-        "--dest",
-        str(wheel_dir),
-        "--index-url",
-        "https://pypi.org/simple",
-        "--only-binary=:all:",
-        "wxPython",
-        "openpyxl",
-    ]
-    run(pip_download, cwd=ROOT)
+    with zipfile.ZipFile(target_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for file_path in sorted(venv_dir.rglob("*")):
+            if file_path.is_dir():
+                continue
+            rel = file_path.relative_to(venv_dir.parent)
+            arcname = rel.as_posix()
+            zf.write(file_path, arcname)
 
+    if not target_zip.exists():
+        raise FileNotFoundError(f"未生成虚拟环境压缩包: {target_zip}")
+
+
+def bundle_node_dependencies():
+    print("[3/5] 打包 npm 依赖到 src.zip...")
     candidates = [
         shutil.which("npm"),
         shutil.which("npm.cmd"),
@@ -85,7 +90,7 @@ def bundle_local_dependencies():
     if not node_modules_dir.exists():
         raise FileNotFoundError(f"未生成 npm 依赖目录: {node_modules_dir}")
 
-    return wheel_dir, node_modules_dir
+    return node_modules_dir
 
 
 def run(cmd, cwd=None, env=None):
@@ -107,7 +112,7 @@ def ensure_pyinstaller():
 
 
 def build_installer_exe():
-    print("[3/5] 打包 installer.exe...")
+    print("[4/5] 打包 installer.exe...")
     if PKG_DIR.exists():
         shutil.rmtree(PKG_DIR)
     PKG_DIR.mkdir(parents=True, exist_ok=True)
@@ -150,7 +155,7 @@ def build_installer_exe():
 
 
 def build_source_zip():
-    print("[4/5] 打包 src.zip...")
+    print("[5/5] 打包 src.zip...")
     zip_path = PKG_DIR / ZIP_NAME
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -173,9 +178,10 @@ def build_source_zip():
 
 
 def print_summary():
-    print("\n[5/5] 打包完成")
+    print("\n打包完成")
     print(f"输出目录: {PKG_DIR}")
     print(f"- {PKG_DIR / EXE_NAME}")
+    print(f"- {PKG_DIR / VENV_ZIP_NAME}")
     print(f"- {PKG_DIR / ZIP_NAME}")
     if ICON_PATH.exists():
         print(f"- {PKG_DIR / ICON_PATH.name}")
@@ -189,7 +195,8 @@ def main():
 
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
     ensure_pyinstaller()
-    bundle_local_dependencies()
+    bundle_python_venv()
+    bundle_node_dependencies()
     build_installer_exe()
     build_source_zip()
     print_summary()

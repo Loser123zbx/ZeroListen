@@ -235,52 +235,28 @@ def _move_contents(src_dir, dest_dir):
 
 
 def ensure_python_install(root_dir, progress_cb=None):
-    python_dir = root_dir / "python"
-    if (python_dir / "python.exe").exists():
+    python_dir = root_dir / ".venv"
+    py_exe = python_dir / "Scripts" / "python.exe"
+    if py_exe.exists():
         return python_dir
 
-    system_name, arch, _ = detect_system()
-    python_name = "python-3.11.9-embed-amd64.zip" if arch == "x64" else "python-3.11.9-embed-arm64.zip"
-    python_urls = [
-        f"https://mirrors.huaweicloud.com/python/3.11.9/{python_name}",
-        f"https://pypi.tuna.tsinghua.edu.cn/framework/python/3.11.9/{python_name}",
-        f"https://npm.taobao.org/mirrors/python/3.11.9/{python_name}",
-        f"https://mirrors.aliyun.com/python/3.11.9/{python_name}",
-        f"https://www.python.org/ftp/python/3.11.9/{python_name}",
-    ]
-    if arch != "x64" and arch != "arm64":
-        python_name = "python-3.11.9-embed-amd64.zip"
-        python_urls = [
-            f"https://mirrors.huaweicloud.com/python/3.11.9/{python_name}",
-            f"https://pypi.tuna.tsinghua.edu.cn/framework/python/3.11.9/{python_name}",
-            f"https://npm.taobao.org/mirrors/python/3.11.9/{python_name}",
-            f"https://mirrors.aliyun.com/python/3.11.9/{python_name}",
-            f"https://www.python.org/ftp/python/3.11.9/{python_name}",
-        ]
-
-    zip_path = root_dir / "python-portable.zip"
-    if progress_cb:
-        progress_cb(0, 100, f"正在下载便携版 Python ({system_name}, {arch})…")
-    download_with_fallback(
-        python_urls,
-        zip_path,
-        lambda p, total, msg: progress_cb(p, total, msg) if progress_cb else None,
-    )
+    zip_path = APP_ROOT / ".venv.zip"
+    if not zip_path.exists():
+        raise FileNotFoundError("未找到 .venv.zip。请把当前项目的 Python 虚拟环境压缩包与 installer.exe 放在同一目录。")
 
     if progress_cb:
-        progress_cb(0, 100, "正在解压 Python 到 python 目录…")
+        progress_cb(0, 100, "正在解压当前 Python 虚拟环境到 .venv 目录…")
     if python_dir.exists():
         shutil.rmtree(python_dir)
-    python_dir.mkdir(parents=True, exist_ok=True)
-    _extract_to_directory(zip_path, python_dir, progress_cb)
-    if progress_cb:
-        progress_cb(100, 100, "Python 解压完成")
 
-    py_exe = python_dir / "python.exe"
-    if py_exe.exists():
-        if not _ensure_python_pip(py_exe, python_dir, progress_cb):
-            if progress_cb:
-                progress_cb(0, 100, "Python 嵌入版未能成功安装 pip，后续依赖安装将失败。")
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(root_dir)
+
+    if not py_exe.exists():
+        raise FileNotFoundError("Python 虚拟环境未正确解压，未找到 .venv\Scripts\python.exe")
+
+    if progress_cb:
+        progress_cb(100, 100, "Python 虚拟环境解压完成")
 
     if zip_path.exists():
         zip_path.unlink()
@@ -341,97 +317,41 @@ def ensure_node_install(root_dir, progress_cb=None):
 
 
 def install_dependencies(python_dir, node_dir, app_dir, progress_cb=None):
-    py_exe = python_dir / "python.exe"
+    py_exe = python_dir / "Scripts" / "python.exe"
     if not py_exe.exists():
-        raise FileNotFoundError("Python 未就绪，无法安装依赖")
+        raise FileNotFoundError("Python 虚拟环境未就绪，无法安装依赖")
 
     pip_probe = _run_logged_command([str(py_exe), "-m", "pip", "--version"], progress_cb, "检查 pip")
     if pip_probe.returncode != 0:
         if progress_cb:
-            progress_cb(0, 100, "Python 未安装 pip，先完成 pip 自举后再安装本地依赖…")
+            progress_cb(0, 100, "Python 虚拟环境未安装 pip，尝试自举 pip…")
         if not _ensure_python_pip(py_exe, python_dir, progress_cb):
-            raise RuntimeError("Python 嵌入版未能安装 pip，无法从 src.zip 中安装本地依赖")
+            raise RuntimeError("Python 虚拟环境未能安装 pip，无法继续安装依赖")
 
-    bundled_wheel_dir = app_dir / "vendor" / "python_wheels"
     bundled_node_modules = app_dir / "node_modules"
+    if progress_cb:
+        progress_cb(50, 100, "正在安装 Node.js 依赖…")
 
-    if bundled_wheel_dir.exists() and any(bundled_wheel_dir.iterdir()):
+    npm_commands = [
+        [str(node_dir / "npm.cmd"), "--prefix", str(app_dir), "install", "--registry=https://registry.npmmirror.com"],
+        [str(node_dir / "npm.cmd"), "--prefix", str(app_dir), "install", "--registry=https://registry.npm.taobao.org"],
+        [str(node_dir / "npm.cmd"), "--prefix", str(app_dir), "install", "--registry=https://registry.npmjs.org"],
+    ]
+
+    npm_ok = False
+    for idx, cmd in enumerate(npm_commands, start=1):
         if progress_cb:
-            progress_cb(0, 100, "检测到内置 Python wheel 包，直接从 src.zip 中安装…")
-        pip_cmd = [
-            str(py_exe), "-m", "pip", "install",
-            "--no-index",
-            "--find-links", str(bundled_wheel_dir),
-            "--upgrade",
-            "pip", "setuptools", "wheel", "wxPython", "openpyxl",
-        ]
-        returncode = _run_streaming_command(pip_cmd, progress_cb, "Python 本地依赖安装", 0)
-        if returncode != 0:
-            raise RuntimeError("本地 Python wheel 仓库安装失败")
-    else:
-        pip_commands = [
-            [
-                str(py_exe), "-m", "pip", "install",
-                "--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple",
-                "--extra-index-url", "https://pypi.org/simple",
-                "--upgrade", "pip", "setuptools", "wheel", "wxPython", "openpyxl"
-            ],
-            [
-                str(py_exe), "-m", "pip", "install",
-                "-i", "https://mirrors.aliyun.com/pypi/simple/",
-                "--upgrade", "pip", "setuptools", "wheel", "wxPython", "openpyxl"
-            ],
-            [
-                str(py_exe), "-m", "pip", "install",
-                "-i", "https://pypi.mirrors.ustc.edu.cn/simple",
-                "--upgrade", "pip", "setuptools", "wheel", "wxPython", "openpyxl"
-            ],
-            [
-                str(py_exe), "-m", "pip", "install",
-                "--upgrade", "pip", "setuptools", "wheel", "wxPython", "openpyxl"
-            ],
-        ]
-
-        pip_ok = False
-        for idx, pip_cmd in enumerate(pip_commands, start=1):
-            if progress_cb:
-                progress_cb(0, 100, f"正在执行 Python 依赖安装命令 {idx}/{len(pip_commands)}…")
-            returncode = _run_streaming_command(pip_cmd, progress_cb, "Python 依赖安装", 0)
-            if returncode == 0:
-                pip_ok = True
-                break
-            if progress_cb:
-                progress_cb(0, 100, "Python 镜像源失败，正在切换到下一个源…")
-        if not pip_ok:
-            raise RuntimeError("Python 依赖安装失败：镜像源和官方源均不可用")
-
-    if bundled_node_modules.exists() and any(bundled_node_modules.iterdir()):
+            progress_cb(50, 100, f"正在执行 npm 安装命令 {idx}/{len(npm_commands)}…")
+        node_env = os.environ.copy()
+        node_env["PATH"] = str(node_dir) + os.pathsep + node_env.get("PATH", "")
+        returncode = _run_streaming_command(cmd, progress_cb, "npm 依赖安装", 50, env=node_env)
+        if returncode == 0:
+            npm_ok = True
+            break
         if progress_cb:
-            progress_cb(50, 100, "检测到内置 Node.js 依赖，直接使用 src.zip 中的 node_modules…")
-    else:
-        if progress_cb:
-            progress_cb(50, 100, "正在安装 Node.js 依赖…")
-
-        npm_commands = [
-            [str(node_dir / "npm.cmd"), "--prefix", str(app_dir), "install", "--registry=https://registry.npmmirror.com"],
-            [str(node_dir / "npm.cmd"), "--prefix", str(app_dir), "install", "--registry=https://registry.npm.taobao.org"],
-            [str(node_dir / "npm.cmd"), "--prefix", str(app_dir), "install", "--registry=https://registry.npmjs.org"],
-        ]
-
-        npm_ok = False
-        for idx, cmd in enumerate(npm_commands, start=1):
-            if progress_cb:
-                progress_cb(50, 100, f"正在执行 npm 安装命令 {idx}/{len(npm_commands)}…")
-            node_env = os.environ.copy()
-            node_env["PATH"] = str(node_dir) + os.pathsep + node_env.get("PATH", "")
-            returncode = _run_streaming_command(cmd, progress_cb, "npm 依赖安装", 50, env=node_env)
-            if returncode == 0:
-                npm_ok = True
-                break
-            if progress_cb:
-                progress_cb(50, 100, "npm 镜像源失败，正在切换到下一个源…")
-        if not npm_ok:
-            raise RuntimeError("Node.js 依赖安装失败：镜像源和官方源均不可用")
+            progress_cb(50, 100, "npm 镜像源失败，正在切换到下一个源…")
+    if not npm_ok:
+        raise RuntimeError("Node.js 依赖安装失败：镜像源和官方源均不可用")
 
     if progress_cb:
         progress_cb(100, 100, "依赖安装完成")
@@ -439,6 +359,7 @@ def install_dependencies(python_dir, node_dir, app_dir, progress_cb=None):
 
 def create_launcher_bat(target_root, python_dir, node_dir, app_dir):
     launcher = target_root / "ZeroListen.bat"
+    py_exe = python_dir / "Scripts" / "python.exe"
     content = (
         "@echo off\r\n"
         "setlocal\r\n"
@@ -446,9 +367,9 @@ def create_launcher_bat(target_root, python_dir, node_dir, app_dir):
         f"set \"PYTHON_DIR={python_dir}\"\r\n"
         f"set \"NODE_DIR={node_dir}\"\r\n"
         f"set \"APP_DIR={app_dir}\"\r\n"
-        "set \"PATH=%PYTHON_DIR%;%NODE_DIR%;%PATH%\"\r\n"
+        "set \"PATH=%PYTHON_DIR%\\Scripts;%PYTHON_DIR%;%NODE_DIR%;%PATH%\"\r\n"
         "cd /d \"%APP_DIR%\"\r\n"
-        "\"%PYTHON_DIR%\\python.exe\" \"%APP_DIR%\\main.py\"\r\n"
+        f"\"{py_exe}\" \"%APP_DIR%\\main.py\"\r\n"
         "exit /b %ERRORLEVEL%\r\n"
     )
     launcher.write_text(content, encoding="utf-8")
