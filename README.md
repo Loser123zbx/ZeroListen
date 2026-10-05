@@ -94,7 +94,7 @@ python main.py
 
 ## 打包说明
 
-项目使用 PyInstaller 进行打包。打包脚本位于 `src/build.bat`，流程包括依赖安装、语言包准备以及程序打包。推荐使用 64 位 Python 3.11。 
+项目使用 PyInstaller 进行打包。打包脚本位于 `src/build.bat`，流程包括依赖安装、语言包准备以及程序打包。推荐使用 64 位 Python 3.11。
 
 在项目根目录执行：
 

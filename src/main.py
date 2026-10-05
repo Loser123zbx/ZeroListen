@@ -807,10 +807,10 @@ class MainFrame(main_panel):
 
 
     def _bind(self):
-        self.create_wordlib.Bind(wx.EVT_BUTTON, self.on_create_wordlib)
-        self.import_wordlib.Bind(wx.EVT_BUTTON, self.on_import_wordlib)
         self.m_listBox1.Bind(wx.EVT_LISTBOX, self.on_select_lib)
 
+        self.welcome.create_wordlib.Bind(wx.EVT_BUTTON, self.on_create_wordlib)
+        self.welcome.import_wordlib.Bind(wx.EVT_BUTTON, self.on_import_wordlib)
         self.welcome.about.Bind(wx.EVT_BUTTON, self.on_about)
         self.welcome.visual_settings.Bind(wx.EVT_BUTTON, self.on_visual_settings)
 
