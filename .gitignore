@@ -8,6 +8,7 @@ __pycache__/
 # Project runtime output
 /release
 /log
+/node_modules.zip
 
 # Local package/build artifacts
 /src/node_modules
